@@ -1,21 +1,27 @@
 {
   "name": "collator-monitoring",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.0.1",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "start": "node dist/monitorCollators.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "Pendulum",
   "license": "ISC",
-  "devDependencies": {
-    "typescript": "^5.3.3"
-  },
   "dependencies": {
     "@polkadot/api": "^10.11.1",
     "@polkadot/util-crypto": "^12.6.1",
     "axios": "^1.6.2",
     "graphql-request": "^6.1.0"
+  },
+  "devDependencies": {
+    "lint-staged": ">=10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "lint-staged": {
+    "*.js": "eslint --cache --fix",
+    "*.{js,css,md}": "prettier --write"
   }
 }

@@ -1,15 +1,16 @@
 import { request, gql } from 'graphql-request';
+import { ApiPromise, WsProvider } from '@polkadot/api';
 import { encodeAddress } from '@polkadot/util-crypto';
 import { hexToU8a } from '@polkadot/util';
+import { Block, QueryResult, BlockProduction, ChainConfig } from './types';
+import { sendSlackNotification } from './slack';
 
 // Chain configurations
-const chains = [
+const chains: ChainConfig[] = [
     { name: "pendulum", wsUrl: 'wss://rpc-pendulum.prd.pendulumchain.tech', gqlUrl: 'https://squid.subsquid.io/pendulum-squid/graphql', ss58Prefix: 56 },
     { name: "amplitude", wsUrl: 'wss://rpc-amplitude.pendulumchain.tech', gqlUrl: 'https://squid.subsquid.io/amplitude-squid/graphql', ss58Prefix: 57 },
     { name: "foucoco", wsUrl: 'wss://rpc-foucoco.pendulumchain.tech', gqlUrl: 'https://squid.subsquid.io/foucoco-squid/graphql', ss58Prefix: 57 },
 ];
-
-import { ApiPromise, WsProvider } from '@polkadot/api';
 
 async function fetchCollators(wsUrl: string): Promise<string[]> {
     const wsProvider = new WsProvider(wsUrl);
@@ -28,7 +29,7 @@ async function fetchCollators(wsUrl: string): Promise<string[]> {
     return collatorAddresses;
 }
 
-// GraphQL query
+// GraphQL query used for fetching blocks produced in the last 24 hours
 const getQuery = (timestamp: string) => gql`
     {
         blocks(
@@ -43,21 +44,6 @@ const getQuery = (timestamp: string) => gql`
     }
 `;
 
-interface Block {
-    height: number;
-    timestamp: string;
-    validator: string;
-}
-
-interface QueryResult {
-    blocks: Block[];
-}
-
-interface BlockProduction {
-    [collator: string]: string[];
-}
-
-// Fetch blocks
 async function fetchBlocks(gqlUrl: string, timestamp: string): Promise<Block[]> {
     try {
         const query = getQuery(timestamp);
@@ -70,21 +56,23 @@ async function fetchBlocks(gqlUrl: string, timestamp: string): Promise<Block[]> 
 }
 
 // Fetch all collators and blocks, then identify inactive and slow collators
-async function analyzeCollatorActivity(wsUrl: string, gqlUrl: string, ss58Prefix: number) {
+async function analyzeCollatorActivity(chainConfig: ChainConfig) {
     try {
+        let message = `Chain Analysis for ${chainConfig.name}:\n`;
+
         // Fetch all collators
-        const allCollators = await fetchCollators(wsUrl);
+        const allCollators = await fetchCollators(chainConfig.wsUrl);
 
         // Calculate the timestamp for 24 hours ago
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
         // Fetch blocks produced in the last 24 hours
-        const blocks = await fetchBlocks(gqlUrl, oneDayAgo);
+        const blocks = await fetchBlocks(chainConfig.gqlUrl, oneDayAgo);
 
          // Convert collator addresses to Substrate format
          const convertedBlocks = blocks.map(block => ({
             ...block,
-            validator: encodeAddress(hexToU8a(block.validator), ss58Prefix)
+            validator: encodeAddress(hexToU8a(block.validator), chainConfig.ss58Prefix)
         }));
 
         // Track block production
@@ -115,19 +103,30 @@ async function analyzeCollatorActivity(wsUrl: string, gqlUrl: string, ss58Prefix
             return producedBlocks < blocksProducedThreshold && !inactiveCollators.includes(collator);
         });
 
+        if (inactiveCollators.length > 0) {
+            message += `Inactive collators: ${inactiveCollators.join(', ')}\n`;
+        }
+
+        if (slowCollators.length > 0) {
+            message += `Slow collators: ${slowCollators.join(', ')}\n`;
+        }
+
+        if (inactiveCollators.length > 0 || slowCollators.length > 0) {
+            await sendSlackNotification(message);
+        }
 
         console.log('Inactive collators:', inactiveCollators);
         console.log('Slow collators:', slowCollators);
     } catch (error) {
         console.error('Error analyzing collator activity:', error);
+        await sendSlackNotification(`Error analyzing collator activity for chain ${chainConfig.name}: ${error}`);
     }
 }
 
 chains.forEach(chain => {
     console.log(`Analyzing chain ${chain.name}...`);
-    analyzeCollatorActivity(chain.wsUrl, chain.gqlUrl, chain.ss58Prefix)
+    analyzeCollatorActivity(chain)
         .then(() => console.log(`Analysis completed for chain ${chain.name}.`))
-        .catch(error => console.error(`Error analyzing chain ${chain.name}:`, error));
+        .catch(error => console.error(`Error analyzing collator activity for chain ${chain.name}:`, error));
 });
-
 

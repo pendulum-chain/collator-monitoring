@@ -1,8 +1,32 @@
 import { request, gql } from 'graphql-request';
+import { encodeAddress } from '@polkadot/util-crypto';
+import { hexToU8a } from '@polkadot/util';
 
-// GraphQL endpoint
-// Will be added as an env variable in the future
-const endpoint = 'https://squid.subsquid.io/foucoco-squid/graphql';
+// Chain configurations
+const chains = [
+    { name: "pendulum", wsUrl: 'wss://rpc-pendulum.prd.pendulumchain.tech', gqlUrl: 'https://squid.subsquid.io/pendulum-squid/graphql', ss58Prefix: 56 },
+    { name: "amplitude", wsUrl: 'wss://rpc-amplitude.pendulumchain.tech', gqlUrl: 'https://squid.subsquid.io/amplitude-squid/graphql', ss58Prefix: 57 },
+    { name: "foucoco", wsUrl: 'wss://rpc-foucoco.pendulumchain.tech', gqlUrl: 'https://squid.subsquid.io/foucoco-squid/graphql', ss58Prefix: 57 },
+];
+
+import { ApiPromise, WsProvider } from '@polkadot/api';
+
+async function fetchCollators(wsUrl: string): Promise<string[]> {
+    const wsProvider = new WsProvider(wsUrl);
+    const api = await ApiPromise.create({ provider: wsProvider });
+
+    // Query the current set of collators
+    const collators = await api.query.session.validators();
+
+    // Cast the result to an array and process it
+    const collatorAddresses = collators.toJSON() as string[];
+
+    // Disconnect from the WebSocket
+    await api.disconnect();
+
+    // Return the list of collator addresses
+    return collatorAddresses;
+}
 
 // GraphQL query
 const getQuery = (timestamp: string) => gql`
@@ -30,15 +54,14 @@ interface QueryResult {
 }
 
 interface BlockProduction {
-    [validator: string]: string[];
+    [collator: string]: string[];
 }
 
 // Fetch blocks
-async function fetchBlocks(timestamp: string): Promise<Block[]> {
+async function fetchBlocks(gqlUrl: string, timestamp: string): Promise<Block[]> {
     try {
         const query = getQuery(timestamp);
-        const data = await request<QueryResult>(endpoint, query);
-        console.log(data)
+        const data = await request<QueryResult>(gqlUrl, query);
         return data.blocks;
     } catch (error) {
         console.error('Error fetching block data:', error);
@@ -46,37 +69,61 @@ async function fetchBlocks(timestamp: string): Promise<Block[]> {
     }
 }
 
-// Identify inactive collators
-async function identifyInactiveCollators() {
+// Fetch all collators and blocks, then identify inactive and slow collators
+async function analyzeCollatorActivity(wsUrl: string, gqlUrl: string, ss58Prefix: number) {
     try {
+        // Fetch all collators
+        const allCollators = await fetchCollators(wsUrl);
+
         // Calculate the timestamp for 24 hours ago
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-        const blocks = await fetchBlocks(oneDayAgo);
+        // Fetch blocks produced in the last 24 hours
+        const blocks = await fetchBlocks(gqlUrl, oneDayAgo);
+
+         // Convert collator addresses to Substrate format
+         const convertedBlocks = blocks.map(block => ({
+            ...block,
+            validator: encodeAddress(hexToU8a(block.validator), ss58Prefix)
+        }));
+
+        // Target block time is 12s, so 7200 blocks are expected in 24 hours
+        const targetBlocksIn24Hours = 7200;
+        const expectedBlocksPerCollator = targetBlocksIn24Hours / allCollators.length;
 
         // Track block production
         const blockProduction: BlockProduction = {};
-        blocks.forEach(block => {
-            const { validator, timestamp } = block;
-            blockProduction[validator] = blockProduction[validator] || [];
-            blockProduction[validator].push(timestamp);
+        convertedBlocks.forEach(block => {
+            const { validator: collator, timestamp } = block;
+            blockProduction[collator] = blockProduction[collator] || [];
+            blockProduction[collator].push(timestamp);
         });
 
-        // Determine inactivity
-        const inactiveCollators = Object.keys(blockProduction).filter(validator => {
-            const timestamps = blockProduction[validator];
-            // Find the most recent timestamp for the validator
-            const lastProductionTime = timestamps.reduce((latest, current) => 
-                latest > current ? latest : current, '');
-        
-            return lastProductionTime < oneDayAgo;
+        // Identify inactive collators
+        const inactiveCollators = allCollators.filter(collator => 
+            !blockProduction[collator] || blockProduction[collator].length === 0
+        );
+
+        // Identify slow collators among active collators
+        const slowCollators = allCollators.filter(collator => {
+            const producedBlocks = blockProduction[collator]?.length || 0;
+            // If a collator produced less than 75% of the expected blocks, it's considered slow
+            return producedBlocks < expectedBlocksPerCollator * 0.75 && !inactiveCollators.includes(collator);
         });
-        
+
+
         console.log('Inactive collators:', inactiveCollators);
+        console.log('Slow collators:', slowCollators);
     } catch (error) {
-        console.error('Error identifying inactive collators:', error);
+        console.error('Error analyzing collator activity:', error);
     }
 }
 
-identifyInactiveCollators();
+chains.forEach(chain => {
+    console.log(`Analyzing chain ${chain.name}...`);
+    analyzeCollatorActivity(chain.wsUrl, chain.gqlUrl, chain.ss58Prefix)
+        .then(() => console.log(`Analysis completed for chain ${chain.name}.`))
+        .catch(error => console.error(`Error analyzing chain ${chain.name}:`, error));
+});
+
 

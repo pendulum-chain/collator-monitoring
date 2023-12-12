@@ -87,10 +87,6 @@ async function analyzeCollatorActivity(wsUrl: string, gqlUrl: string, ss58Prefix
             validator: encodeAddress(hexToU8a(block.validator), ss58Prefix)
         }));
 
-        // Target block time is 12s, so 7200 blocks are expected in 24 hours
-        const targetBlocksIn24Hours = 7200;
-        const expectedBlocksPerCollator = targetBlocksIn24Hours / allCollators.length;
-
         // Track block production
         const blockProduction: BlockProduction = {};
         convertedBlocks.forEach(block => {
@@ -104,11 +100,19 @@ async function analyzeCollatorActivity(wsUrl: string, gqlUrl: string, ss58Prefix
             !blockProduction[collator] || blockProduction[collator].length === 0
         );
 
+        // Target block time is 12s, so 7200 blocks are expected in 24 hours
+        const targetBlocksIn24Hours = 7200;
+        const expectedBlocksPerCollator = targetBlocksIn24Hours / allCollators.length;
+        // Get the percentage from env var and set it to 75% by default
+        // Used to determine the threshold for slow collators and is a percentage of the expected blocks produced per collator in 24 hours
+        const percentage = process.env.PERCENTAGE ? parseInt(process.env.PERCENTAGE) : 75;
+        const blocksProducedThreshold = expectedBlocksPerCollator * percentage / 100;
+
         // Identify slow collators among active collators
         const slowCollators = allCollators.filter(collator => {
             const producedBlocks = blockProduction[collator]?.length || 0;
             // If a collator produced less than 75% of the expected blocks, it's considered slow
-            return producedBlocks < expectedBlocksPerCollator * 0.75 && !inactiveCollators.includes(collator);
+            return producedBlocks < blocksProducedThreshold && !inactiveCollators.includes(collator);
         });
 
 

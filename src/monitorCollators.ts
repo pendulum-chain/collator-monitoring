@@ -3,7 +3,7 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 import { encodeAddress } from '@polkadot/util-crypto';
 import { hexToU8a } from '@polkadot/util';
 import { Block, QueryResult, BlockProduction, ChainConfig } from './types';
-import { sendSlackNotification } from './slack';
+import { SlackBlock, sendSlackNotification } from './slack';
 
 // Chain configurations
 const chains: ChainConfig[] = [
@@ -58,7 +58,15 @@ async function fetchBlocks(gqlUrl: string, timestamp: string): Promise<Block[]> 
 // Fetch all collators and blocks, then identify inactive and slow collators
 async function analyzeCollatorActivity(chainConfig: ChainConfig) {
     try {
-        let message = `Chain Analysis for ${chainConfig.name}:\n`;
+        let slackBlocks: SlackBlock[] = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": `*Chain analysis for ${chainConfig.name}:*`
+                }
+            }
+        ];
 
         // Fetch all collators
         const allCollators = await fetchCollators(chainConfig.wsUrl);
@@ -104,22 +112,42 @@ async function analyzeCollatorActivity(chainConfig: ChainConfig) {
         });
 
         if (inactiveCollators.length > 0) {
-            message += `Inactive collators: ${inactiveCollators.join(', ')}\n`;
+            slackBlocks.push({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": `*Inactive collators:*\n ${inactiveCollators.join(', ')}`
+                }
+            });
         }
 
         if (slowCollators.length > 0) {
-            message += `Slow collators: ${slowCollators.join(', ')}\n`;
+            slackBlocks.push({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": `*Slow collators:*\n ${slowCollators.join(', ')}`
+                }
+            });
         }
 
         if (inactiveCollators.length > 0 || slowCollators.length > 0) {
-            await sendSlackNotification(message);
+            await sendSlackNotification({ blocks: slackBlocks });
         }
 
         console.log('Inactive collators:', inactiveCollators);
         console.log('Slow collators:', slowCollators);
     } catch (error) {
         console.error('Error analyzing collator activity:', error);
-        await sendSlackNotification(`Error analyzing collator activity for chain ${chainConfig.name}: ${error}`);
+        await sendSlackNotification({
+            blocks: [{
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": `:x: Error analyzing chain ${chainConfig.name}: ${error}`
+                }
+            }]
+        });
     }
 }
 

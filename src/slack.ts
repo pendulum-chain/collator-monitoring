@@ -1,3 +1,4 @@
+import { Block, KnownBlock } from '@slack/types';
 import axios from 'axios';
 
 if (!process.env.SLACK_WEBHOOK_TOKEN) {
@@ -6,10 +7,21 @@ if (!process.env.SLACK_WEBHOOK_TOKEN) {
 
 const slackWebHookUrl = 'https://hooks.slack.com/services/${process.env.SLACK_WEB_HOOK_TOKEN}';
 
-export async function sendSlackNotification(message: string) {
+export type SlackBlock = KnownBlock | Block;
+
+export interface SlackBlockkitMessage {
+    blocks?: SlackBlock[];
+}
+
+export async function sendSlackNotification(message: SlackBlockkitMessage) {
     try {
-        await axios.post(slackWebHookUrl, { text: message });
+        const payload = JSON.stringify(message);
+        await axios.post(slackWebHookUrl, payload, {
+            headers: {
+              "Content-Type": "application/json"
+            }
+          });
     } catch (error) {
-        console.error('Error sending Slack notification:', error);
+        throw new Error(`Failed to send message. Error: ${error}`);
     }
 }

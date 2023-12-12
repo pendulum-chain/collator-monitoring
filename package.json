@@ -8,10 +8,11 @@
   },
   "keywords": [],
   "author": "Pendulum",
-  "license": "ISC",
+  "license": "GPL3",
   "dependencies": {
     "@polkadot/api": "^10.11.1",
     "@polkadot/util-crypto": "^12.6.1",
+    "@slack/types": "^2.10.0",
     "axios": "^1.6.2",
     "graphql-request": "^6.1.0"
   },

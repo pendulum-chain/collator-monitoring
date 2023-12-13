@@ -10,7 +10,7 @@ There are 2 cases in which this script will report it's findings:
 
 ### Mandatory
 
-- `SLACK_WEBHOOK_TOKEN` - Slack web hook token for collator performance reporting.
+- `SLACK_WEB_HOOK_TOKEN` - Slack web hook token for collator performance reporting.
 
 ### Optional
 

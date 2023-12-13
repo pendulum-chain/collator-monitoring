@@ -2,7 +2,7 @@
   "compilerOptions": {
     "pretty": true,
     "target": "es2020",
-    "module": "commonjs",
+    "module": "NodeNext",
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,

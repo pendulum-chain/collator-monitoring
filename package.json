@@ -2,9 +2,11 @@
   "name": "collator-monitoring",
   "version": "0.0.1",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/monitorCollators.js",
+    "dev": "node --loader ts-node/esm src/index.ts",
+    "start": "node dist/index.js",
     "prepare": "husky install"
   },
   "keywords": [],

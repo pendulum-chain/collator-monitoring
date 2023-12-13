@@ -1,7 +1,7 @@
 import { Block, KnownBlock } from '@slack/types';
 import axios from 'axios';
 
-if (!process.env.SLACK_WEBHOOK_TOKEN) {
+if (!process.env.SLACK_WEB_HOOK_TOKEN) {
     throw new Error('Slack webhook token is not defined.');
 }
 

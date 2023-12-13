@@ -1,20 +1,35 @@
-import { request, gql } from 'graphql-request';
-import { ApiPromise, WsProvider } from '@polkadot/api';
-import { encodeAddress } from '@polkadot/util-crypto';
-import { hexToU8a } from '@polkadot/util';
-import { Block, QueryResult, BlockProduction, ChainConfig } from './types';
-import { SlackBlock, sendSlackNotification } from './slack';
+import {request, gql} from 'graphql-request';
+import {ApiPromise, WsProvider} from '@polkadot/api';
+import {encodeAddress} from '@polkadot/util-crypto';
+import {hexToU8a} from '@polkadot/util';
+import {Block, QueryResult, BlockProduction, ChainConfig} from './types.js';
+import {SlackBlock, sendSlackNotification} from './slack.js';
 
 // Chain configurations
 const chains: ChainConfig[] = [
-    { name: "pendulum", wsUrl: 'wss://rpc-pendulum.prd.pendulumchain.tech', gqlUrl: 'https://squid.subsquid.io/pendulum-squid/graphql', ss58Prefix: 56 },
-    { name: "amplitude", wsUrl: 'wss://rpc-amplitude.pendulumchain.tech', gqlUrl: 'https://squid.subsquid.io/amplitude-squid/graphql', ss58Prefix: 57 },
-    { name: "foucoco", wsUrl: 'wss://rpc-foucoco.pendulumchain.tech', gqlUrl: 'https://squid.subsquid.io/foucoco-squid/graphql', ss58Prefix: 57 },
+    {
+        name: "pendulum",
+        wsUrl: 'wss://rpc-pendulum.prd.pendulumchain.tech',
+        gqlUrl: 'https://squid.subsquid.io/pendulum-squid/graphql',
+        ss58Prefix: 56
+    },
+    {
+        name: "amplitude",
+        wsUrl: 'wss://rpc-amplitude.pendulumchain.tech',
+        gqlUrl: 'https://squid.subsquid.io/amplitude-squid/graphql',
+        ss58Prefix: 57
+    },
+    {
+        name: "foucoco",
+        wsUrl: 'wss://rpc-foucoco.pendulumchain.tech',
+        gqlUrl: 'https://squid.subsquid.io/foucoco-squid/graphql',
+        ss58Prefix: 57
+    },
 ];
 
 async function fetchCollators(wsUrl: string): Promise<string[]> {
     const wsProvider = new WsProvider(wsUrl);
-    const api = await ApiPromise.create({ provider: wsProvider });
+    const api = await ApiPromise.create({provider: wsProvider});
 
     // Query the current set of collators
     const collators = await api.query.session.validators();
@@ -33,8 +48,8 @@ async function fetchCollators(wsUrl: string): Promise<string[]> {
 const getQuery = (timestamp: string) => gql`
     {
         blocks(
-            limit: 7200, 
-            orderBy: timestamp_DESC, 
+            limit: 7200,
+            orderBy: timestamp_DESC,
             where: { timestamp_gte: "${timestamp}" }
         ) {
             height
@@ -63,7 +78,7 @@ async function analyzeCollatorActivity(chainConfig: ChainConfig) {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": `*Chain analysis for ${chainConfig.name}:*`
+                    "text": `Chain analysis for *${chainConfig.name}:*`
                 }
             }
         ];
@@ -77,8 +92,8 @@ async function analyzeCollatorActivity(chainConfig: ChainConfig) {
         // Fetch blocks produced in the last 24 hours
         const blocks = await fetchBlocks(chainConfig.gqlUrl, oneDayAgo);
 
-         // Convert collator addresses to Substrate format
-         const convertedBlocks = blocks.map(block => ({
+        // Convert collator addresses to Substrate format
+        const convertedBlocks = blocks.map(block => ({
             ...block,
             validator: encodeAddress(hexToU8a(block.validator), chainConfig.ss58Prefix)
         }));
@@ -86,13 +101,13 @@ async function analyzeCollatorActivity(chainConfig: ChainConfig) {
         // Track block production
         const blockProduction: BlockProduction = {};
         convertedBlocks.forEach(block => {
-            const { validator: collator, timestamp } = block;
+            const {validator: collator, timestamp} = block;
             blockProduction[collator] = blockProduction[collator] || [];
             blockProduction[collator].push(timestamp);
         });
 
         // Identify inactive collators
-        const inactiveCollators = allCollators.filter(collator => 
+        const inactiveCollators = allCollators.filter(collator =>
             !blockProduction[collator] || blockProduction[collator].length === 0
         );
 
@@ -126,17 +141,20 @@ async function analyzeCollatorActivity(chainConfig: ChainConfig) {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": `*Slow collators:*\n ${slowCollators.join(', ')}`
+                    "text": `*Slow collators*: (produced <${percentage}% of expected blocks)\n ${slowCollators.join(', ')}`
                 }
             });
         }
 
-        if (inactiveCollators.length > 0 || slowCollators.length > 0) {
-            await sendSlackNotification({ blocks: slackBlocks });
-        }
-
+        console.log('On network: ', chainConfig.name);
         console.log('Inactive collators:', inactiveCollators);
         console.log('Slow collators:', slowCollators);
+
+        if (inactiveCollators.length > 0 || slowCollators.length > 0) {
+            return slackBlocks
+        }
+        // We don't want to send a slack message if there are no inactive or slow collators
+        return []
     } catch (error) {
         console.error('Error analyzing collator activity:', error);
         await sendSlackNotification({
@@ -151,10 +169,30 @@ async function analyzeCollatorActivity(chainConfig: ChainConfig) {
     }
 }
 
-chains.forEach(chain => {
+// Combining the results of multiple promises to a single slack message
+let slackBlocks: SlackBlock[] = [];
+for (const chain of chains) {
     console.log(`Analyzing chain ${chain.name}...`);
-    analyzeCollatorActivity(chain)
-        .then(() => console.log(`Analysis completed for chain ${chain.name}.`))
-        .catch(error => console.error(`Error analyzing collator activity for chain ${chain.name}:`, error));
-});
+    await analyzeCollatorActivity(chain)
+        .then((blocks) => {
+            console.log(`Analysis completed for chain ${chain.name}.`)
 
+            if (blocks && blocks.length > 0) {
+                slackBlocks.push(...blocks)
+            }
+        })
+        .catch(error => console.error(`Error analyzing collator activity for chain ${chain.name}:`, error));
+
+}
+
+if (slackBlocks.length > 0) {
+    // Prepend a header to the Slack message
+    slackBlocks.unshift({
+        "type": "header",
+        "text": {
+            "type": "plain_text",
+            "text": `Collator activity analysis`
+        }
+    });
+    sendSlackNotification({blocks: slackBlocks});
+}

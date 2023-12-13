@@ -1,5 +1,3 @@
-# collator-monitoring
-
 ## Description
 This script is ran periodically in order to monitor collator performance. 
 Collator addresses are fetched from the chain state while data about the blocks authored in the last 24 hours (last 7200 blocks) is fetched from the Subsquid indexer.

@@ -169,30 +169,43 @@ async function analyzeCollatorActivity(chainConfig: ChainConfig) {
     }
 }
 
+async function run() {
 // Combining the results of multiple promises to a single slack message
-let slackBlocks: SlackBlock[] = [];
-for (const chain of chains) {
-    console.log(`Analyzing chain ${chain.name}...`);
-    await analyzeCollatorActivity(chain)
-        .then((blocks) => {
-            console.log(`Analysis completed for chain ${chain.name}.`)
+    let slackBlocks: SlackBlock[] = [];
+    for (const chain of chains) {
+        console.log(`Analyzing chain ${chain.name}...`);
+        await analyzeCollatorActivity(chain)
+            .then((blocks) => {
+                console.log(`Analysis completed for chain ${chain.name}.`)
 
-            if (blocks && blocks.length > 0) {
-                slackBlocks.push(...blocks)
+                if (blocks && blocks.length > 0) {
+                    slackBlocks.push(...blocks)
+                }
+            })
+            .catch(error => console.error(`Error analyzing collator activity for chain ${chain.name}:`, error));
+
+    }
+
+    if (slackBlocks.length > 0) {
+        // Prepend a header to the Slack message
+        slackBlocks.unshift({
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": `Collator activity analysis`
             }
-        })
-        .catch(error => console.error(`Error analyzing collator activity for chain ${chain.name}:`, error));
-
+        });
+        await sendSlackNotification({blocks: slackBlocks});
+    }
 }
 
-if (slackBlocks.length > 0) {
-    // Prepend a header to the Slack message
-    slackBlocks.unshift({
-        "type": "header",
-        "text": {
-            "type": "plain_text",
-            "text": `Collator activity analysis`
-        }
-    });
-    sendSlackNotification({blocks: slackBlocks});
+// Infinitely call the run function
+while (true) {
+    await run();
+    // Wait for some days, defaults to 7 days
+    const waitTimeDays = process.env.WAIT_TIME_DAYS ? parseInt(process.env.WAIT_TIME_DAYS) : 7;
+    console.log("Sleeping for ", waitTimeDays, " days");
+    const ms = waitTimeDays * 24 * 60 * 60 * 1000;
+
+    await new Promise(resolve => setTimeout(resolve, ms));
 }

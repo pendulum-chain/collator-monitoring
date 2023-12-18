@@ -15,3 +15,4 @@ There are 2 cases in which this script will report it's findings:
 ### Optional
 
 - `PERCENTAGE` - The percentage of the average number of blocks authored per collator in 24 hours which is considered to be acceptable collator performance. Defaults to `75`.
+- `WAIT_TIME_DAYS` - The number of days to wait before reporting collators who haven't authored any blocks. Defaults to `7`.
